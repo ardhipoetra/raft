@@ -1,4 +1,5 @@
 #include <string.h>
+#include <unistd.h>
 
 #include "assert.h"
 #include "configuration.h"
@@ -18,7 +19,7 @@
 #include "tracing.h"
 
 /* Set to 1 to enable tracing. */
-#if 0
+#if 1
 #define tracef(...) Tracef(r->tracer, __VA_ARGS__)
 #else
 #define tracef(...)
@@ -31,6 +32,8 @@
 #ifndef min
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #endif
+
+static unsigned isExist = 0;
 
 /* Context of a RAFT_IO_APPEND_ENTRIES request that was submitted with
  * raft_io_>send(). */
@@ -50,6 +53,8 @@ static void sendAppendEntriesCb(struct raft_io_send *send, const int status)
     struct sendAppendEntries *req = send->data;
     struct raft *r = req->raft;
     unsigned i = configurationIndexOf(&r->configuration, req->server_id);
+
+    // tracef("sendAppendEntriesCb svid:%ul", req->server_id);
 
     if (r->state == RAFT_LEADER && i < r->configuration.n) {
         if (status != 0) {
@@ -111,9 +116,11 @@ static int sendAppendEntries(struct raft *r,
      */
     args->leader_commit = r->commit_index;
 
-    tracef("send %u entries starting at %llu to server %u (last index %llu)",
-           args->n_entries, args->prev_log_index, server->id,
-           logLastIndex(&r->log));
+    if(args->n_entries > 0) {
+        // tracef("send %u entries starting at %llu to server %u (last index %llu)",
+        //    args->n_entries, args->prev_log_index, server->id,
+        //    logLastIndex(&r->log));
+    }
 
     message.type = RAFT_IO_APPEND_ENTRIES;
     message.server_id = server->id;
@@ -131,6 +138,9 @@ static int sendAppendEntries(struct raft *r,
     req->server_id = server->id;
 
     req->send.data = req;
+
+    tracef("send AppendEntries; commitIdx: %u", message.append_entries.leader_commit);
+
     rv = r->io->send(r->io, &req->send, &message, sendAppendEntriesCb);
     if (rv != 0) {
         goto err_after_req_alloc;
@@ -367,6 +377,10 @@ static int triggerAll(struct raft *r)
 
     assert(r->state == RAFT_LEADER);
 
+    if (isExist > 0) {
+        tracef("...Trigger replication to other servers....");
+    }
+
     /* Trigger replication for servers we didn't hear from recently. */
     for (i = 0; i < r->configuration.n; i++) {
         struct raft_server *server = &r->configuration.servers[i];
@@ -391,6 +405,7 @@ static int triggerAll(struct raft *r)
 
 int replicationHeartbeat(struct raft *r)
 {
+    isExist = 0;
     return triggerAll(r);
 }
 
@@ -467,7 +482,7 @@ static void appendLeaderCb(struct raft_io_append *req, int status)
     size_t server_index;
     int rv;
 
-    tracef("leader: written %u entries starting at %lld: status %d", request->n,
+    tracef("leader: WRITEN %u entries starting at %lld: status %d", request->n,
            request->index, status);
 
     /* In case of a failed disk write, if we were the leader creating these
@@ -516,7 +531,6 @@ static void appendLeaderCb(struct raft_io_append *req, int status)
 
     /* Check if we can commit some new entries. */
     replicationQuorum(r, r->last_stored);
-
     rv = replicationApply(r);
     if (rv != 0) {
         /* TODO: just log the error? */
@@ -549,6 +563,8 @@ static int appendLeader(struct raft *r, raft_index index)
         goto err;
     }
 
+    isExist = n;
+
     /* We expect this function to be called only when there are actually
      * some entries to write. */
     assert(n > 0);
@@ -571,6 +587,8 @@ static int appendLeader(struct raft *r, raft_index index)
         ErrMsgTransfer(r->io->errmsg, r->errmsg, "io");
         goto err_after_request_alloc;
     }
+
+    tracef("REQUEST write to disk finished");
 
     return 0;
 
@@ -629,7 +647,7 @@ static int triggerActualPromotion(struct raft *r)
     index = logLastIndex(&r->log) + 1;
 
     /* Encode the new configuration and append it to the log. */
-    rv = logAppendConfiguration(&r->log, term, &r->configuration);
+    rv = logAppendConfiguration(&r->log, term, &r->configuration, writeMC(r->id)); //triggerActualPromotion
     if (rv != 0) {
         goto err;
     }
@@ -742,6 +760,8 @@ int replicationUpdate(struct raft *r,
     /* Check if we can commit some new entries. */
     replicationQuorum(r, r->last_stored);
 
+    tracef("We got ACK from appendingEntries. Try apply replication -> will trigger FSM apply");
+
     rv = replicationApply(r);
     if (rv != 0) {
         /* TODO: just log the error? */
@@ -792,6 +812,9 @@ static void sendAppendEntriesResult(
     struct raft_io_send *req;
     int rv;
 
+    tracef("Send appendEntriesResult");
+    usleep(1000000);
+
     message.type = RAFT_IO_APPEND_ENTRIES_RESULT;
     message.server_id = r->follower_state.current_leader.id;
     message.server_address = r->follower_state.current_leader.address;
@@ -828,7 +851,7 @@ static void appendFollowerCb(struct raft_io_append *req, int status)
     size_t j;
     int rv;
 
-    tracef("I/O completed on follower: status %d", status);
+    tracef("I/O request completed on follower: status %d", status);
 
     assert(args->entries != NULL);
     assert(args->n_entries > 0);
@@ -882,6 +905,7 @@ static void appendFollowerCb(struct raft_io_append *req, int status)
      */
     if (args->leader_commit > r->commit_index) {
         r->commit_index = min(args->leader_commit, r->last_stored);
+        tracef("on appendFollowerCb, may commit soon");
         rv = replicationApply(r);
         if (rv != 0) {
             goto out;
@@ -1073,13 +1097,18 @@ int replicationAppend(struct raft *r,
      *   commitIndex, set commitIndex = min(leaderCommit, index of last new
      *   entry).
      */
+    tracef("New AppendEntries (commitIdx: %d) incoming! len:%d", args->leader_commit, n);         
     if (n == 0) {
+        // tracef("\t\t\t\t\tNo New entries :(");
         if (args->leader_commit > r->commit_index) {
             r->commit_index = min(args->leader_commit, logLastIndex(&r->log));
+            tracef("New EMPTY AppendEntries incoming. Leader commit# > our commit#. Commit our stuff");
             rv = replicationApply(r);
             if (rv != 0) {
                 return rv;
             }
+        } else {
+            tracef("...........................Nothing happened, just return;.....................");
         }
 
         return 0;
@@ -1102,9 +1131,8 @@ int replicationAppend(struct raft *r,
      * that we issue below actually completes.  */
     for (j = 0; j < n; j++) {
         struct raft_entry *entry = &args->entries[i + j];
-
         rv = logAppend(&r->log, entry->term, entry->type, &entry->buf,
-                       entry->batch);
+                       entry->batch, writeMC(r->id), true);               //logAppend@replicationAppend
         if (rv != 0) {
             /* TODO: we should revert any changes we made to the log */
             goto err_after_request_alloc;
@@ -1476,6 +1504,7 @@ int replicationApply(struct raft *r)
         assert(entry->type == RAFT_COMMAND || entry->type == RAFT_BARRIER ||
                entry->type == RAFT_CHANGE);
 
+        tracef("ReplicationApply with MC:%ul", entry->mc);
         switch (entry->type) {
             case RAFT_COMMAND:
                 rv = applyCommand(r, index, &entry->buf);

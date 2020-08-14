@@ -8,6 +8,8 @@
 
 #define RAFT_API __attribute__((visibility("default")))
 
+// 2 (upper random) * default timeout * (number of servers - 1)
+#define MC_TIMEOUT 2 * 1000 * (3 - 1)
 /**
  * Error codes.
  */
@@ -184,6 +186,8 @@ struct raft_entry
 {
     raft_term term;         /* Term in which the entry was created. */
     unsigned short type;    /* Type (FSM command, barrier, config change). */
+    unsigned long long mc;
+    unsigned long long prev_mc;
     struct raft_buffer buf; /* Entry data. */
     void *batch;            /* Batch that buf's memory points to, if any. */
 };
@@ -210,6 +214,18 @@ struct raft_entry_ref
     struct raft_entry_ref *next; /* Next item in the bucket (for collisions). */
 };
 
+/** some activity on raft_logs, so far I only need append
+ * and truncate (and discard?)
+*/
+#define RAFT_LOG_APPEND 1
+#define RAFT_LOG_TRUNCATE 2
+#define RAFT_LOG_DISCARD 3
+#define RAFT_LOG_INIT 4
+#define RAFT_LOG_RELEASE 5
+#define RAFT_LOG_NEWSNAP 6
+#define RAFT_LOG_RESTORE 7
+#define RAFT_LOG_NONE 99
+
 /**
  * In-memory cache of the persistent raft log stored on disk.
  *
@@ -225,6 +241,7 @@ struct raft_log
     raft_index offset;           /* Index of first entry is offset+1. */
     struct raft_entry_ref *refs; /* Log entries reference counts hash table. */
     size_t refs_size;            /* Size of the reference counts hash table. */
+    short last_act;              // last activity on raft_log    
     struct                       /* Information about last snapshot, or zero. */
     {
         raft_index last_index; /* Snapshot replaces all entries up to here. */
@@ -982,4 +999,8 @@ RAFT_API void raft_heap_set_default(void);
 
 #undef RAFT__REQUEST
 
+unsigned long long writeMC(raft_id r_id);
+unsigned long long readMC(raft_id r_id);
+
 #endif /* RAFT_H */
+

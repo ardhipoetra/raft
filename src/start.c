@@ -11,7 +11,7 @@
 #include "tracing.h"
 
 /* Set to 1 to enable tracing. */
-#if 0
+#if 1
 #define tracef(...) Tracef(r->tracer, __VA_ARGS__)
 #else
 #define tracef(...)
@@ -77,7 +77,7 @@ static int restoreEntries(struct raft *r,
     for (i = 0; i < n; i++) {
         struct raft_entry *entry = &entries[i];
         rv = logAppend(&r->log, entry->term, entry->type, &entry->buf,
-                       entry->batch);
+                       entry->batch, entry->mc, false);
         if (rv != 0) {
             goto err;
         }
@@ -187,6 +187,21 @@ int raft_start(struct raft *r)
         return rv;
     }
 
+    /* 
+    * check log head and MC
+    * 
+    */
+    struct raft_log* lg = &r->log;
+    size_t lognum = logNumEntries(lg);
+    if (lognum > 1) {
+        tracef("MC on latest entry is %lu - emmc MC is %lu", lg->entries[lg->back-1].mc, readMC(r->id));
+        if (lg->entries[lg->back-1].mc != readMC(r->id)) {
+            tracef("ERROR: MC is not equal. Rollback suspected!. Please start fresh");
+            return RAFT_SHUTDOWN;
+        }
+    }
+    
+    
     /* Start the I/O backend. The tickCb function is expected to fire every
      * r->heartbeat_timeout milliseconds and recvCb whenever an RPC is
      * received. */

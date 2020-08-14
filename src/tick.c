@@ -9,7 +9,7 @@
 #include "tracing.h"
 
 /* Set to 1 to enable tracing. */
-#if 0
+#if 1
 #define tracef(...) Tracef(r->tracer, __VA_ARGS__)
 #else
 #define tracef(...)
@@ -18,6 +18,8 @@
 /* Number of milliseconds after which a server promotion will be aborted if the
  * server hasn't caught up with the logs yet. */
 #define RAFT_MAX_CATCH_UP_DURATION (5 * 1000)
+
+int initsafe = 0;
 
 /* Apply time-dependent rules for followers (Figure 3.1). */
 static int tickFollower(struct raft *r)
@@ -50,6 +52,22 @@ static int tickFollower(struct raft *r)
      *   current leader or granting vote to candidate, convert to candidate.
      */
     if (electionTimerExpired(r) && server->role == RAFT_VOTER) {
+        // raft_index storedMC = readMC(r->id);
+        // if (storedMC != r->last_stored && initsafe == 0) {
+        //     if (mcConflictExpired(r)) {
+        //         //it is expired, fill our logs with no op to increment local counter, or
+        //         //               start the counter immediately linked with prev-valid counter
+                
+        //         //TODO: what happen if mismatch occurred?
+
+        //         //then this node may convert to candidate
+        //         initsafe = 1;
+        //     } else {
+        //         tracef("mismatch MC %ul:%ul", storedMC, r->last_stored);
+        //         return 0;
+        //     }
+        // }
+        
         tracef("convert to candidate and start new election");
         rv = convertToCandidate(r, false /* disrupt leader */);
         if (rv != 0) {
@@ -203,8 +221,10 @@ static int tick(struct raft *r)
 
     /* If we are not available, let's do nothing. */
     if (r->state == RAFT_UNAVAILABLE) {
+        tracef("I'm not available..... :(");
         return 0;
     }
+    // tracef("I'm available..... as %d", r->state);
 
     switch (r->state) {
         case RAFT_FOLLOWER:

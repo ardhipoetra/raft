@@ -11,9 +11,16 @@ extern struct raft_tracer NoopTracer;
 /* Emit a debug message with the given tracer. */
 #define Tracef(TRACER, ...)                             \
     do {                                                \
-        char _msg[1024];                                \
-        snprintf(_msg, sizeof _msg, __VA_ARGS__);       \
-        TRACER->emit(TRACER, __FILE__, __LINE__, _msg); \
+        char _msg[1024];                               \
+        snprintf(_msg, sizeof _msg, __VA_ARGS__);   \
+        fprintf(stdout, "[RAFT]\t%s:%d >> %s\n", __FILE__, __LINE__, _msg);               \
     } while (0)
 
 #endif /* TRACING_H_ */
+
+
+ // do {                                                
+    //     char _msg[1024];                                
+    //     snprintf(_msg, sizeof _msg, __VA_ARGS__);       
+    //     TRACER->emit(TRACER, __FILE__, __LINE__, _msg); 
+    // } while (0)

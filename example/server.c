@@ -6,12 +6,12 @@
 #include "../include/raft.h"
 #include "../include/raft/uv.h"
 
-#define N_SERVERS 3    /* Number of servers in the example cluster */
-#define APPLY_RATE 125 /* Apply a new entry every 125 milliseconds */
+#define N_SERVERS 4    /* Number of servers in the example cluster */
+#define APPLY_RATE 2000 /* Apply a new entry every 125 milliseconds */
 
-#define Log(SERVER_ID, FORMAT) printf("%d: " FORMAT "\n", SERVER_ID)
+#define Log(SERVER_ID, FORMAT) printf("\t\t[SERVER]%d: " FORMAT "\n", SERVER_ID)
 #define Logf(SERVER_ID, FORMAT, ...) \
-    printf("%d: " FORMAT "\n", SERVER_ID, __VA_ARGS__)
+    printf("\t\t[SERVER]%d: " FORMAT "\n", SERVER_ID, __VA_ARGS__)
 
 /********************************************************************
  *
@@ -32,6 +32,7 @@ static int FsmApply(struct raft_fsm *fsm,
     if (buf->len != 8) {
         return RAFT_MALFORMED;
     }
+    Logf(0, ";FSM; Increased from %d to %d", f->count, f->count+ *(uint64_t *)buf->base);
     f->count += *(uint64_t *)buf->base;
     *result = &f->count;
     return 0;
@@ -270,8 +271,8 @@ static void serverApplyCb(struct raft_apply *req, int status, void *result)
     if (count % 100 == 0) {
         Logf(s->id, "count %d", count);
     }
-}
 
+}
 /* Called periodically every APPLY_RATE milliseconds. */
 static void serverTimerCb(uv_timer_t *timer)
 {
@@ -299,6 +300,7 @@ static void serverTimerCb(uv_timer_t *timer)
         return;
     }
     req->data = s;
+    printf("\n\t\t[SERVER]%d: ;LEADER; raft_apply() called \n", s->id);
 
     rv = raft_apply(&s->raft, req, &buf, 1, serverApplyCb);
     if (rv != 0) {
@@ -319,7 +321,7 @@ static int ServerStart(struct Server *s)
         Logf(s->id, "raft_start(): %s", raft_errmsg(&s->raft));
         goto err;
     }
-    rv = uv_timer_start(&s->timer, serverTimerCb, 0, 125);
+    rv = uv_timer_start(&s->timer, serverTimerCb, 0, APPLY_RATE);
     if (rv != 0) {
         Logf(s->id, "uv_timer_start(): %s", uv_strerror(rv));
         goto err;
@@ -384,6 +386,8 @@ int main(int argc, char *argv[])
     }
     dir = argv[1];
     id = (unsigned)atoi(argv[2]);
+
+    Logf(id, "hereyougo %d %s", id, dir);
 
     /* Ignore SIGPIPE, see https://github.com/joyent/libuv/issues/1254 */
     signal(SIGPIPE, SIG_IGN);

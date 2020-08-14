@@ -6,7 +6,13 @@
 #include "assert.h"
 #include "byte.h"
 #include "configuration.h"
+#include "uv.h"
 
+#if 1
+#define tracef(...) Tracef(c->uv->tracer, __VA_ARGS__)
+#else
+#define tracef(...)
+#endif
 /**
  * Size of the request preable.
  */
@@ -41,7 +47,7 @@ static size_t sizeofAppendEntries(const struct raft_append_entries *p)
            sizeof(uint64_t) + /* Previous log entry term */
            sizeof(uint64_t) + /* Leader's commit index */
            sizeof(uint64_t) + /* Number of entries in the batch */
-           16 * p->n_entries /* One header per entry */;
+           (16 + 8 + 8) * p->n_entries /* One header per entry */; // refer to batch headers: mc prev_mc
 }
 
 static size_t sizeofAppendEntriesResult(void)
@@ -74,7 +80,8 @@ static size_t sizeofTimeoutNow(void)
 size_t uvSizeofBatchHeader(size_t n)
 {
     return 8 + /* Number of entries in the batch, little endian */
-           16 * n /* One header per entry */;
+           (16 + 8 + 8) * /* original headers (16) + mc (8) + prev_mc (8) */
+           n /* One header per entry */;
 }
 
 static void encodeRequestVote(const struct raft_request_vote *p, void *buf)
@@ -285,7 +292,11 @@ void uvEncodeBatchHeader(const struct raft_entry *entries,
         /* Message type (Either RAFT_COMMAND or RAFT_CHANGE) */
         bytePut8(&cursor, (uint8_t)entry->type);
 
+        bytePut64(&cursor, entry->mc);
+
         cursor = (uint8_t *)cursor + 3; /* Unused */
+
+        bytePut64(&cursor, entry->prev_mc);
 
         /* Size of the log entry data, little endian. */
         bytePut32(&cursor, (uint32_t)entry->buf.len);
@@ -335,6 +346,8 @@ int uvDecodeBatchHeader(const void *batch,
 
     *n = (unsigned)byteGet64(&cursor);
 
+    tracef("from uvDecode: %u", *n);
+
     if (*n == 0) {
         *entries = NULL;
         return 0;
@@ -359,7 +372,10 @@ int uvDecodeBatchHeader(const void *batch,
             goto err_after_alloc;
         }
 
+        entry->mc = byteGet64(&cursor);
         cursor = (uint8_t *)cursor + 3; /* Unused */
+
+        entry->prev_mc = byteGet64(&cursor);
 
         /* Size of the log entry data, little endian. */
         entry->buf.len = byteGet32(&cursor);
@@ -475,6 +491,7 @@ int uvDecodeMessage(const unsigned long type,
             break;
         case RAFT_IO_APPEND_ENTRIES:
             rv = decodeAppendEntries(header, &message->append_entries);
+            tracef("num: %ul", message->append_entries.n_entries);
             for (i = 0; i < message->append_entries.n_entries; i++) {
                 *payload_len += message->append_entries.entries[i].buf.len;
             }

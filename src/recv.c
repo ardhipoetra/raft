@@ -16,7 +16,7 @@
 #include "tracing.h"
 
 /* Set to 1 to enable tracing. */
-#if 0
+#if 1
 #define tracef(...) Tracef(r->tracer, __VA_ARGS__)
 #else
 #define tracef(...)
@@ -92,6 +92,7 @@ void recvCb(struct raft_io *io, struct raft_message *message)
 {
     struct raft *r = io->data;
     int rv;
+    // tracef("We receive message CB. State:%d MsgType:%d from:%s", r->state, message->type, message->server_address);
     if (r->state == RAFT_UNAVAILABLE) {
         switch (message->type) {
             case RAFT_IO_APPEND_ENTRIES:

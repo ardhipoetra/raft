@@ -11,7 +11,7 @@
 #include "tracing.h"
 
 /* Set to 1 to enable tracing. */
-#if 0
+#if 1
 #define tracef(...) Tracef(r->tracer, __VA_ARGS__)
 #else
 #define tracef(...)
@@ -44,7 +44,7 @@ int raft_apply(struct raft *r,
     req->cb = cb;
 
     /* Append the new entries to the log. */
-    rv = logAppendCommands(&r->log, r->current_term, bufs, n);
+    rv = logAppendCommands(&r->log, r->current_term, bufs, n, writeMC(r->id)); //raft_apply
     if (rv != 0) {
         goto err;
     }
@@ -93,7 +93,7 @@ int raft_barrier(struct raft *r, struct raft_barrier *req, raft_barrier_cb cb)
     req->index = index;
     req->cb = cb;
 
-    rv = logAppend(&r->log, r->current_term, RAFT_BARRIER, &buf, NULL);
+    rv = logAppend(&r->log, r->current_term, RAFT_BARRIER, &buf, NULL, writeMC(r->id), true); //raft_barrier
     if (rv != 0) {
         goto err_after_buf_alloc;
     }
@@ -131,7 +131,7 @@ static int clientChangeConfiguration(
     index = logLastIndex(&r->log) + 1;
 
     /* Encode the new configuration and append it to the log. */
-    rv = logAppendConfiguration(&r->log, term, configuration);
+    rv = logAppendConfiguration(&r->log, term, configuration, writeMC(r->id)); //clientChangeConfiguration
     if (rv != 0) {
         goto err;
     }

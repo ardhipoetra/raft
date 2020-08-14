@@ -13,10 +13,18 @@
 #include "membership.h"
 #include "tracing.h"
 
-#define DEFAULT_ELECTION_TIMEOUT 1000 /* One second */
-#define DEFAULT_HEARTBEAT_TIMEOUT 100 /* One tenth of a second */
+/* 1000 = 1 sec */
+#define DEFAULT_ELECTION_TIMEOUT 20000 
+#define DEFAULT_HEARTBEAT_TIMEOUT 5000
 #define DEFAULT_SNAPSHOT_THRESHOLD 1024
 #define DEFAULT_SNAPSHOT_TRAILING 2048
+
+/* Set to 1 to enable tracing. */
+#if 1
+#define tracef(...) Tracef(r->tracer, __VA_ARGS__)
+#else
+#define tracef(...)
+#endif
 
 int raft_init(struct raft *r,
               struct raft_io *io,
@@ -199,4 +207,35 @@ unsigned long long raft_digest(const char *text, unsigned long long n)
     memcpy(&digest, value + (sizeof value - sizeof digest), sizeof digest);
 
     return byteFlip64(digest);
+}
+
+unsigned long long writeMC(raft_id r_id) {
+    FILE *fptr;
+    unsigned long long cur_mc = readMC(r_id);
+
+    char buf[20];
+    snprintf(buf, sizeof buf, "./mc-xs%d", (int) r_id);
+
+    // tracef("Write MC to (HARDCODED) %s: %d", buf, ilog_idx);
+
+    fptr = fopen(buf,"w");
+    fprintf(fptr,"%lu",cur_mc + 1);
+    fclose(fptr);
+
+    return cur_mc + 1;
+}
+
+unsigned long long readMC(raft_id r_id) {
+    FILE *fptr;
+    unsigned long long num;
+    char buf[20];
+    snprintf(buf, sizeof buf, "./mc-xs%d", (int) r_id);
+
+    fptr = fopen(buf,"r");
+    fscanf(fptr,"%lu", &num);
+
+    // tracef("Read MC from (HARDCODED) %s: %ul", buf, num);
+    fclose(fptr); 
+
+    return num;
 }

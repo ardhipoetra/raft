@@ -7,7 +7,7 @@
 #include "uv_encoding.h"
 
 /* Set to 1 to enable tracing. */
-#if 0
+#if 1
 #define tracef(...) Tracef(c->uv->tracer, __VA_ARGS__)
 #else
 #define tracef(...)
@@ -215,12 +215,12 @@ static int uvClientSend(struct uvClient *c, struct uvSend *send)
 
     /* If there's no connection available, let's queue the request. */
     if (c->stream == NULL) {
-        tracef("no connection available -> enqueue message");
+        tracef("no connection (to %lu/%lu) available -> enqueue message", c->id, send->client->id);
         QUEUE_PUSH(&c->pending, &send->queue);
         return 0;
     }
 
-    tracef("connection available -> write message");
+    // tracef("connection to %s available -> write message", c->address);
     send->write.data = send;
     rv = uv_write(&send->write, c->stream, send->bufs, send->n_bufs,
                   uvSendWriteCb);

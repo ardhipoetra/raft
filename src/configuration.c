@@ -3,6 +3,15 @@
 #include "assert.h"
 #include "byte.h"
 
+#include "tracing.h"
+
+/* Set to 1 to enable tracing. */
+#if 1
+#define tracef(...) Tracef(r->tracer, __VA_ARGS__)
+#else
+#define tracef(...)
+#endif
+
 /* Current encoding format version. */
 #define ENCODING_FORMAT 1
 
@@ -119,6 +128,8 @@ int configurationAdd(struct raft_configuration *c,
     size_t i;
     assert(c != NULL);
     assert(id != 0);
+
+    tracef("configuraiton %ul added:%s role:%d\n", id, address, role);
 
     if (role != RAFT_STANDBY && role != RAFT_VOTER && role != RAFT_SPARE) {
         return RAFT_BADROLE;

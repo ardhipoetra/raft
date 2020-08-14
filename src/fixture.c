@@ -14,7 +14,7 @@
 #include "tracing.h"
 
 /* Set to 1 to enable tracing. */
-#if 0
+#if 1
 #define tracef(...) Tracef(r->tracer, __VA_ARGS__)
 #else
 #define tracef(...)
@@ -499,7 +499,7 @@ static int ioMethodBootstrap(struct raft_io *raft_io,
     if (entries == NULL) {
         return RAFT_NOMEM;
     }
-
+    tracef("ioMethodbootstrap");
     entries[0].term = 1;
     entries[0].type = RAFT_CHANGE;
     entries[0].buf = buf;
@@ -914,6 +914,8 @@ static int serverInit(struct raft_fixture *f, unsigned i, struct raft_fsm *fsm)
     struct raft_fixture_server *s = &f->servers[i];
     s->alive = true;
     s->id = i + 1;
+    tracef("?Fixture server init?");
+
     sprintf(s->address, "%llu", s->id);
     rv = ioInit(&s->io, i, &f->time);
     if (rv != 0) {
@@ -1098,6 +1100,8 @@ static bool updateLeaderAndCheckElectionSafety(struct raft_fixture *f)
     unsigned i;
     bool changed;
 
+    tracef("Update leader and check election safety");
+
     for (i = 0; i < f->n; i++) {
         struct raft *raft = raft_fixture_get(f, i);
         unsigned j;
@@ -1255,6 +1259,8 @@ static void copyLeaderLog(struct raft_fixture *f)
     unsigned n;
     size_t i;
     int rv;
+    tracef("copyLeaderLog");
+
     logClose(&f->log);
     logInit(&f->log);
     rv = logAcquire(&raft->log, 1, &entries, &n);
@@ -1265,7 +1271,7 @@ static void copyLeaderLog(struct raft_fixture *f)
         buf.len = entry->buf.len;
         buf.base = raft_malloc(buf.len);
         memcpy(buf.base, entry->buf.base, buf.len);
-        rv = logAppend(&f->log, entry->term, entry->type, &buf, NULL);
+        rv = logAppend(&f->log, entry->term, entry->type, &buf, NULL, writeMC(raft->id), true); //copyLeaderLog
         assert(rv == 0);
     }
     logRelease(&raft->log, 1, entries, n);
@@ -1337,6 +1343,9 @@ static void completeRequest(struct raft_fixture *f, unsigned i, raft_time t)
     bool found = false;
     f->time = t;
     f->event.server_index = i;
+
+    tracef("completeRequest");
+
     QUEUE_FOREACH(head, &io->requests)
     {
         r = QUEUE_DATA(head, struct ioRequest, queue);

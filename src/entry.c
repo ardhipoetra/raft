@@ -27,6 +27,8 @@ int entryCopy(const struct raft_entry *src, struct raft_entry *dst)
 {
     dst->term = src->term;
     dst->type = src->type;
+    dst->mc = src->mc;
+    dst->prev_mc = src->prev_mc;
     dst->buf.len = src->buf.len;
     dst->buf.base = raft_malloc(dst->buf.len);
     if (dst->buf.len > 0 && dst->buf.base == NULL) {
@@ -72,6 +74,7 @@ int entryBatchCopy(const struct raft_entry *src,
 
     for (i = 0; i < n; i++) {
         (*dst)[i].term = src[i].term;
+        (*dst)[i].mc = src[i].mc;
         (*dst)[i].type = src[i].type;
         (*dst)[i].buf.base = cursor;
         (*dst)[i].buf.len = src[i].buf.len;

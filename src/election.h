@@ -37,6 +37,8 @@ void electionResetTimer(struct raft *r);
  * Must be called in follower or candidate state. */
 bool electionTimerExpired(struct raft *r);
 
+bool mcConflictExpired(struct raft *r);
+
 /* Start a new election round.
  *
  * From Figure 3.1:

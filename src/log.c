@@ -6,6 +6,15 @@
 #include "assert.h"
 #include "configuration.h"
 
+#include "tracing.h"
+
+/* Set to 1 to enable tracing. */
+#if 1
+#define tracef(...) Tracef(r->tracer, __VA_ARGS__)
+#else
+#define tracef(...)
+#endif
+
 /* Calculate the reference count hash table key for the given log entry index in
  * an hash table of the given size.
  *
@@ -106,6 +115,8 @@ fill:
     slot->next = NULL;
 
     *collision = false;
+
+    tracef("Successfully tried inserting refs t:%lu idx:%lu count:%d", term, index, count);
 
     return 0;
 }
@@ -346,6 +357,7 @@ void logInit(struct raft_log *l)
     l->refs_size = 0;
     l->snapshot.last_index = 0;
     l->snapshot.last_term = 0;
+    l->last_act = RAFT_LOG_NONE;
 }
 
 /* Return the index of the i'th entry in the log. */
@@ -425,6 +437,8 @@ void logStart(struct raft_log *l,
     l->snapshot.last_index = snapshot_index;
     l->snapshot.last_term = snapshot_term;
     l->offset = start_index - 1;
+
+    l->last_act = RAFT_LOG_INIT;
 }
 
 /* Ensure that the entries array has enough free slots for adding a new enty. */
@@ -473,7 +487,8 @@ int logAppend(struct raft_log *l,
               const raft_term term,
               const unsigned short type,
               const struct raft_buffer *buf,
-              void *batch)
+              void *batch, 
+              unsigned long mc, bool check)
 {
     int rv;
     struct raft_entry *entry;
@@ -496,14 +511,51 @@ int logAppend(struct raft_log *l,
         return rv;
     }
 
+    unsigned long long prev_mc = 0l;
+    size_t num_log = logNumEntries(l);
+    /** The idea is that: 
+     *  - if previous known operation do not remove some entries, 
+     *      check En-1.MC whether it is falling behind current MC. (continuity)
+     *  - check En-1.prev_mc == En-2.mc
+     *      assume that En-2 to En-3 is also checked in previous log
+     */ 
+    
+    if (num_log > 0) {
+        prev_mc = l->entries[l->back-1].mc;
+
+        if (check) { // -> init state don't do checking
+            // if we're not deleting entries before, check MC;                                   //delete on head/front
+            if (l->last_act != RAFT_LOG_TRUNCATE && l->last_act != RAFT_LOG_DISCARD && l->last_act != RAFT_LOG_NEWSNAP){
+                //compare last MC with current MC
+                if (! (mc - 1 <= prev_mc)) { //TODO: can we append and then increment MC?
+                    tracef("\t\t\tERROR: known last MC is falling behind current MC! %lu vs %lu", mc - 1 ,prev_mc);
+                    return RAFT_SHUTDOWN;
+                }
+            }
+            if (num_log > 1 && l->entries[l->back-1].prev_mc != l->entries[l->back-2].mc) { //beware:short-circuit
+                tracef("\t\t\tERROR: lost chain detected! %lu != %lu ", l->entries[l->back-1].prev_mc,  l->entries[l->back-2].mc);
+                return RAFT_SHUTDOWN;
+            }
+        }
+        if (prev_mc != mc - 1) {
+            tracef("\t\tWe have a jump!!");
+        }
+    } // else: it is our very first entry
+
+    tracef("logAppend w mc:%lu - prev:%lu | lastact:%d", mc, prev_mc, l->last_act);
+
     entry = &l->entries[l->back];
     entry->term = term;
     entry->type = type;
     entry->buf = *buf;
+    entry->mc = mc;
+    entry->prev_mc = prev_mc;
     entry->batch = batch;
 
     l->back += 1;
     l->back = l->back % l->size;
+
+    l->last_act = RAFT_LOG_APPEND;
 
     return 0;
 }
@@ -511,7 +563,8 @@ int logAppend(struct raft_log *l,
 int logAppendCommands(struct raft_log *l,
                       const raft_term term,
                       const struct raft_buffer bufs[],
-                      const unsigned n)
+                      const unsigned n,
+                      unsigned long mc)
 {
     unsigned i;
     int rv;
@@ -523,7 +576,7 @@ int logAppendCommands(struct raft_log *l,
 
     for (i = 0; i < n; i++) {
         const struct raft_buffer *buf = &bufs[i];
-        rv = logAppend(l, term, RAFT_COMMAND, buf, NULL);
+        rv = logAppend(l, term, RAFT_COMMAND, buf, NULL, mc, true);
         if (rv != 0) {
             return rv;
         }
@@ -534,7 +587,8 @@ int logAppendCommands(struct raft_log *l,
 
 int logAppendConfiguration(struct raft_log *l,
                            const raft_term term,
-                           const struct raft_configuration *configuration)
+                           const struct raft_configuration *configuration,
+                           unsigned long mc)
 {
     struct raft_buffer buf;
     int rv;
@@ -550,7 +604,7 @@ int logAppendConfiguration(struct raft_log *l,
     }
 
     /* Append the new entry to the log. */
-    rv = logAppend(l, term, RAFT_CHANGE, &buf, NULL);
+    rv = logAppend(l, term, RAFT_CHANGE, &buf, NULL, mc, true);
     if (rv != 0) {
         goto err_after_encode;
     }
@@ -770,6 +824,8 @@ void logRelease(struct raft_log *l,
     if (entries != NULL) {
         raft_free(entries);
     }
+
+    l->last_act = RAFT_LOG_RELEASE;
 }
 
 /* Clear the log if it became empty. */
@@ -843,11 +899,14 @@ void logTruncate(struct raft_log *l, const raft_index index)
         return;
     }
     removeSuffix(l, index, true);
+
+    l->last_act = RAFT_LOG_TRUNCATE;
 }
 
 void logDiscard(struct raft_log *l, const raft_index index)
 {
     removeSuffix(l, index, false);
+    l->last_act = RAFT_LOG_DISCARD;
 }
 
 /* Delete all entries up to the given index (included). */
@@ -904,6 +963,7 @@ void logSnapshot(struct raft_log *l, raft_index last_index, unsigned trailing)
     }
 
     removePrefix(l, last_index - trailing);
+    l->last_act = RAFT_LOG_NEWSNAP;
 }
 
 void logRestore(struct raft_log *l, raft_index last_index, raft_term last_term)
@@ -911,6 +971,7 @@ void logRestore(struct raft_log *l, raft_index last_index, raft_term last_term)
     size_t n = logNumEntries(l);
     assert(last_index > 0);
     assert(last_term > 0);
+    l->last_act = RAFT_LOG_RESTORE;
     if (n > 0) {
         logTruncate(l, logLastIndex(l) - n + 1);
     }

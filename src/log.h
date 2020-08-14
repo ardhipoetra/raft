@@ -51,18 +51,21 @@ int logAppend(struct raft_log *l,
               raft_term term,
               unsigned short type,
               const struct raft_buffer *buf,
-              void *batch);
+              void *batch,
+              unsigned long mc, bool check);
 
 /* Convenience to append a series of #RAFT_COMMAND entries. */
 int logAppendCommands(struct raft_log *l,
                       const raft_term term,
                       const struct raft_buffer bufs[],
-                      const unsigned n);
+                      const unsigned n, 
+                      unsigned long mc);
 
 /* Convenience to encode and append a single #RAFT_CHANGE entry. */
 int logAppendConfiguration(struct raft_log *l,
                            const raft_term term,
-                           const struct raft_configuration *configuration);
+                           const struct raft_configuration *configuration, 
+                           unsigned long mc);
 
 /* Acquire an array of entries from the given index onwards. * The payload
  * memory referenced by the @buf attribute of the returned entries is guaranteed

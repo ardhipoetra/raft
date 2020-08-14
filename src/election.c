@@ -7,7 +7,7 @@
 #include "tracing.h"
 
 /* Set to 1 to enable tracing. */
-#if 0
+#if 1
 #define tracef(...) Tracef(r->tracer, __VA_ARGS__)
 #else
 #define tracef(...)
@@ -51,6 +51,15 @@ bool electionTimerExpired(struct raft *r)
     struct followerOrCandidateState *state = getFollowerOrCandidateState(r);
     raft_time now = r->io->time(r->io);
     return now - r->election_timer_start >= state->randomized_election_timeout;
+}
+
+bool mcConflictExpired(struct raft *r)
+{
+    struct followerOrCandidateState *state = getFollowerOrCandidateState(r);
+    raft_time now = r->io->time(r->io);
+    // printf("mcConflict : %d\n\n", (int) r->configuration.n);
+    // return now - r->election_timer_start >= 2 * (int) r->election_timeout * r->configuration.n;
+    return now - r->election_timer_start >= MC_TIMEOUT;
 }
 
 static void sendRequestVoteCb(struct raft_io_send *send, int status)

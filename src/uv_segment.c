@@ -12,7 +12,7 @@
 #include "uv.h"
 #include "uv_encoding.h"
 
-#if 0
+#if 1
 #define tracef(...) Tracef(c->uv->tracer, __VA_ARGS__)
 #else
 #define tracef(...)
@@ -802,7 +802,7 @@ int uvSegmentLoadAll(struct uv *uv,
     for (i = 0; i < n_infos; i++) {
         struct uvSegmentInfo *info = &infos[i];
 
-        tracef("load segment %s", info->filename);
+        tracef("load segment from fname:%s", info->filename);
 
         if (info->is_open) {
             rv = uvLoadOpenSegment(uv, info, entries, n_entries, &next_index);
@@ -908,7 +908,11 @@ static int uvWriteClosedSegment(struct uv *uv,
 
     entry.term = 1;
     entry.type = RAFT_CHANGE;
+    entry.mc = writeMC(uv->id); //bootstrap configuration
+    entry.prev_mc = 0;
     entry.buf = *conf;
+
+    tracef("writeclosedsegment");
 
     rv = uvSegmentBufferAppend(&buf, &entry, 1);
     if (rv != 0) {
