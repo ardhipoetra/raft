@@ -482,7 +482,7 @@ static void appendLeaderCb(struct raft_io_append *req, int status)
     size_t server_index;
     int rv;
 
-    tracef("leader: WRITEN %u entries starting at %lld: status %d", request->n,
+    tracef("leader: written %u entries starting at %lld: status %d", request->n,
            request->index, status);
 
     /* In case of a failed disk write, if we were the leader creating these
@@ -499,6 +499,27 @@ static void appendLeaderCb(struct raft_io_append *req, int status)
             }
         }
         goto out;
+    }
+
+    int x;
+    struct raft_entry* tmpent;
+    raft_mc now_mc = readMC(r->id);
+
+    for (x = 0; x < request->n; x++) {
+        tmpent = &request->entries[x];
+        tracef("%d - entry w/ %lu %lu | local:%lu readprev:%lu", x, tmpent->mc, tmpent->prev_mc, r->local_mc, now_mc);
+
+        if(tmpent->mc <= r->local_mc) {
+            now_mc = writeStopPoint(r->id, 0,0,0,0); //or writeMC (below)
+            // now_mc = writeMC(r->id); //or writeContent();
+            if(now_mc != tmpent->mc) {
+                // should never happen. MC is not match
+                tracef("\t\t\t\t\t\tERROR: MC not match");
+            }
+        } else {
+            // should never happen. local MC should be higher
+            tracef("\t\t\t\t\t\tERROR: local MC is lower!");
+        }
     }
 
     updateLastStored(r, request->index, request->entries, request->n);
@@ -647,7 +668,8 @@ static int triggerActualPromotion(struct raft *r)
     index = logLastIndex(&r->log) + 1;
 
     /* Encode the new configuration and append it to the log. */
-    rv = logAppendConfiguration(&r->log, term, &r->configuration, writeMC(r->id)); //triggerActualPromotion
+    inc_local_MC(r);
+    rv = logAppendConfiguration(&r->log, term, &r->configuration, r->local_mc); //wmc:triggerActualPromotion
     if (rv != 0) {
         goto err;
     }
@@ -871,6 +893,27 @@ static void appendFollowerCb(struct raft_io_append *req, int status)
         tracef("local server is unavailable -> ignore I/O result");
         goto out;
     }
+    
+    int x;
+    struct raft_entry* tmpent;
+    raft_mc now_mc = readMC(r->id);
+
+    for (x = 0; x < args->n_entries; x++) {
+        tmpent = &args->entries[x];
+        tracef("%d - entry w/ %lu %lu | local:%lu readprev:%lu", x, tmpent->mc, tmpent->prev_mc, r->local_mc, now_mc);
+
+        if(tmpent->mc <= r->local_mc) {
+            now_mc = writeStopPoint(r->id, 0,0,0,0); //or writeMC (below)
+            // now_mc = writeMC(r->id); //or writeContent();
+            if(now_mc != tmpent->mc) {
+                // should never happen. MC is not match
+                tracef("\t\t\t\t\t\tERROR: MC not match");
+            }
+        } else {
+            // should never happen. local MC should be higher
+            tracef("\t\t\t\t\t\tERROR: local MC is lower!");
+        }
+    }
 
     i = updateLastStored(r, request->index, args->entries, args->n_entries);
 
@@ -1019,6 +1062,17 @@ static int deleteConflictingEntries(struct raft *r,
                     return rv;
                 }
             }
+            struct raft_entry *from_del_ent = logGet(&r->log,entry_index);
+            struct raft_entry *to_del_ent = logGet(&r->log,logNumEntries(&r->log));
+
+            tracef("from: %lu to %lu", from_del_ent->mc, to_del_ent->mc);
+            
+            writeStopPoint(r->id, 
+                logGet(&r->log, entry_index-1)->mc,
+                from_del_ent->mc, to_del_ent->mc, 
+                readMC(r->id) + 1);
+
+            inc_local_MC(r);
 
             /* Delete all entries from this index on because they don't
              * match. */
@@ -1131,8 +1185,9 @@ int replicationAppend(struct raft *r,
      * that we issue below actually completes.  */
     for (j = 0; j < n; j++) {
         struct raft_entry *entry = &args->entries[i + j];
+        inc_local_MC(r);
         rv = logAppend(&r->log, entry->term, entry->type, &entry->buf,
-                       entry->batch, writeMC(r->id), true);               //logAppend@replicationAppend
+                       entry->batch, r->local_mc, true);               //wmc:logAppend@replicationAppend
         if (rv != 0) {
             /* TODO: we should revert any changes we made to the log */
             goto err_after_request_alloc;

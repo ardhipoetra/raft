@@ -7,6 +7,8 @@
 #include "configuration.h"
 
 #include "tracing.h"
+#include "hmac_sha1.h"
+#include <stdlib.h>
 
 /* Set to 1 to enable tracing. */
 #if 1
@@ -519,21 +521,26 @@ int logAppend(struct raft_log *l,
      *  - check En-1.prev_mc == En-2.mc
      *      assume that En-2 to En-3 is also checked in previous log
      */ 
-    
+
+    size_t prev_index = l->back == 0 ? l->size-1: l->back-1;
+    // if back < front : loop
     if (num_log > 0) {
-        prev_mc = l->entries[l->back-1].mc;
+        prev_mc = l->entries[prev_index].mc;
 
         if (check) { // -> init state don't do checking
             // if we're not deleting entries before, check MC;                                   //delete on head/front
             if (l->last_act != RAFT_LOG_TRUNCATE && l->last_act != RAFT_LOG_DISCARD && l->last_act != RAFT_LOG_NEWSNAP){
                 //compare last MC with current MC
-                if (! (mc - 1 <= prev_mc)) { //TODO: can we append and then increment MC?
+                if (! (mc - 1 <= prev_mc)) { 
                     tracef("\t\t\tERROR: known last MC is falling behind current MC! %lu vs %lu", mc - 1 ,prev_mc);
                     return RAFT_SHUTDOWN;
                 }
             }
-            if (num_log > 1 && l->entries[l->back-1].prev_mc != l->entries[l->back-2].mc) { //beware:short-circuit
-                tracef("\t\t\tERROR: lost chain detected! %lu != %lu ", l->entries[l->back-1].prev_mc,  l->entries[l->back-2].mc);
+
+            size_t prev_index2 = prev_index == 0 ? l->size-1 : prev_index-1;
+
+            if (num_log > 1 && l->entries[prev_index].prev_mc != l->entries[prev_index2].mc) { //beware:short-circuit
+                tracef("\t\t\tERROR: lost chain detected! %lu != %lu ", l->entries[prev_index].prev_mc,  l->entries[prev_index2].mc);
                 return RAFT_SHUTDOWN;
             }
         }
@@ -542,7 +549,7 @@ int logAppend(struct raft_log *l,
         }
     } // else: it is our very first entry
 
-    tracef("logAppend w mc:%lu - prev:%lu | lastact:%d", mc, prev_mc, l->last_act);
+    tracef("logAppend w mc:%lu - prev:%lu | lastact:%d >>> f:b:sz:off=%lu:%lu:%lu:%lu", mc, prev_mc, l->last_act, l->front, l->back, l->size, l->offset);
 
     entry = &l->entries[l->back];
     entry->term = term;
@@ -551,6 +558,19 @@ int logAppend(struct raft_log *l,
     entry->mc = mc;
     entry->prev_mc = prev_mc;
     entry->batch = batch;
+
+    char msg[100];
+    sprintf(msg, "%llu-%d-%llu-%llu", entry->term, entry->type, entry->mc, entry->prev_mc);
+
+    uint8_t* hmac = malloc(sizeof(uint8_t) * SHA1_DIGEST_SIZE); //20 bytes
+    hmac_sha1(HMAC_KEY, strlen(HMAC_KEY), msg, strlen(msg), hmac, SHA1_DIGEST_SIZE);
+    entry->hash = hmac;
+
+    char hex[100];
+    for (int i = 0, j = 0; i < SHA1_DIGEST_SIZE; ++i, j += 2)
+        sprintf(hex + j, "%02x", hmac[i] & 0xff);
+    
+    tracef("HMAC(SHA1) key:%s msg:%s hash:%s", HMAC_KEY, msg, hex);
 
     l->back += 1;
     l->back = l->back % l->size;
@@ -964,6 +984,7 @@ void logSnapshot(struct raft_log *l, raft_index last_index, unsigned trailing)
 
     removePrefix(l, last_index - trailing);
     l->last_act = RAFT_LOG_NEWSNAP;
+    tracef("Snapshot done");
 }
 
 void logRestore(struct raft_log *l, raft_index last_index, raft_term last_term)

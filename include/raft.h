@@ -5,11 +5,15 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
+#include "hmac_sha1.h"
+#include <stdint.h>
 
 #define RAFT_API __attribute__((visibility("default")))
 
 // 2 (upper random) * default timeout * (number of servers - 1)
 #define MC_TIMEOUT 2 * 1000 * (3 - 1)
+
+#define HMAC_KEY "asdqwe123"
 /**
  * Error codes.
  */
@@ -63,6 +67,11 @@ typedef unsigned long long raft_index;
  * Hold a time value expressed in milliseconds since the epoch.
  */
 typedef unsigned long long raft_time;
+
+/**
+ * Hold the value of a raft MC
+ */
+typedef unsigned long long raft_mc;
 
 /**
  * A data buffer.
@@ -186,10 +195,11 @@ struct raft_entry
 {
     raft_term term;         /* Term in which the entry was created. */
     unsigned short type;    /* Type (FSM command, barrier, config change). */
-    unsigned long long mc;
-    unsigned long long prev_mc;
+    raft_mc mc;
+    raft_mc prev_mc;
     struct raft_buffer buf; /* Entry data. */
     void *batch;            /* Batch that buf's memory points to, if any. */
+    uint8_t *hash;          /* HMAC for this entry: now it is hardcoded to SHA-256 / 32 byte */
 };
 
 /**
@@ -557,6 +567,7 @@ struct raft
     struct raft_fsm *fsm;       /* User-defined FSM to apply commands to. */
     raft_id id;                 /* Server ID of this raft instance. */
     char *address;              /* Server address of this raft instance. */
+    raft_mc local_mc;
 
     /*
      * Cache of the server's persistent state, updated on stable storage before
@@ -999,8 +1010,18 @@ RAFT_API void raft_heap_set_default(void);
 
 #undef RAFT__REQUEST
 
-unsigned long long writeMC(raft_id r_id);
-unsigned long long readMC(raft_id r_id);
+raft_mc inc_local_MC(struct raft* r);
+raft_mc writeMC(raft_id r_id);
+raft_mc writeContent(raft_id r_id, char *str);
+raft_mc readMC(raft_id r_id);
+char* readContent(raft_id r_id);
 
+raft_mc writeStopPoint(raft_id r_id, raft_mc prev_mc, 
+                    raft_mc st_del_mc, raft_mc ed_del_mc,
+                    raft_mc next_mc);
+
+void readStopPoint(raft_id r_id, raft_mc prev_mc, 
+                    raft_mc st_del_mc, raft_mc ed_del_mc,
+                    raft_mc next_mc);
 #endif /* RAFT_H */
 

@@ -29,6 +29,7 @@ int entryCopy(const struct raft_entry *src, struct raft_entry *dst)
     dst->type = src->type;
     dst->mc = src->mc;
     dst->prev_mc = src->prev_mc;
+    dst->hash = src->hash;
     dst->buf.len = src->buf.len;
     dst->buf.base = raft_malloc(dst->buf.len);
     if (dst->buf.len > 0 && dst->buf.base == NULL) {

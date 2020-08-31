@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 #if defined(__cplusplus)
 #define BYTE__INLINE inline
@@ -111,6 +112,13 @@ BYTE__INLINE void bytePutString(void **cursor, const char *value)
     *p += strlen(value) + 1;
 }
 
+BYTE__INLINE void bytePutLen(void **cursor, const uint8_t *value, uint32_t len)
+{
+    uint8_t **p = (uint8_t **)cursor;
+    memcpy(*p, value, len);
+    *p += len;
+}
+
 BYTE__INLINE uint8_t byteGet8(const void **cursor)
 {
     const uint8_t **p = (const uint8_t **)cursor;
@@ -161,6 +169,17 @@ BYTE__INLINE const char *byteGetString(const void **cursor, size_t max_len)
     }
     *p += len + 1;
     return value;
+}
+
+BYTE__INLINE uint8_t* byteGetLen(const void **cursor, uint32_t len)
+{
+    uint8_t **p = (uint8_t **)cursor;
+    uint8_t *value = *p;
+    uint8_t* ret = malloc(sizeof(uint8_t) * len);
+
+    memcpy(ret, value, len);
+    *p += len;
+    return ret;
 }
 
 /* Add padding to size if it's not a multiple of 8. */

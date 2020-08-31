@@ -1271,7 +1271,8 @@ static void copyLeaderLog(struct raft_fixture *f)
         buf.len = entry->buf.len;
         buf.base = raft_malloc(buf.len);
         memcpy(buf.base, entry->buf.base, buf.len);
-        rv = logAppend(&f->log, entry->term, entry->type, &buf, NULL, writeMC(raft->id), true); //copyLeaderLog
+        inc_local_MC(raft);
+        rv = logAppend(&f->log, entry->term, entry->type, &buf, NULL, raft->local_mc, true); //wmc:copyLeaderLog
         assert(rv == 0);
     }
     logRelease(&raft->log, 1, entries, n);

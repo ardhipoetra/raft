@@ -224,7 +224,6 @@ static int tick(struct raft *r)
         tracef("I'm not available..... :(");
         return 0;
     }
-    // tracef("I'm available..... as %d", r->state);
 
     switch (r->state) {
         case RAFT_FOLLOWER:

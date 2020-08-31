@@ -7,6 +7,7 @@
 #include "byte.h"
 #include "configuration.h"
 #include "uv.h"
+#include "hmac_sha1.h"
 
 #if 1
 #define tracef(...) Tracef(c->uv->tracer, __VA_ARGS__)
@@ -47,7 +48,7 @@ static size_t sizeofAppendEntries(const struct raft_append_entries *p)
            sizeof(uint64_t) + /* Previous log entry term */
            sizeof(uint64_t) + /* Leader's commit index */
            sizeof(uint64_t) + /* Number of entries in the batch */
-           (16 + 8 + 8) * p->n_entries /* One header per entry */; // refer to batch headers: mc prev_mc
+           (16 + 8 + 8 + 20 + 4) * p->n_entries /* One header per entry */; // refer to batch headers: line 84
 }
 
 static size_t sizeofAppendEntriesResult(void)
@@ -80,7 +81,7 @@ static size_t sizeofTimeoutNow(void)
 size_t uvSizeofBatchHeader(size_t n)
 {
     return 8 + /* Number of entries in the batch, little endian */
-           (16 + 8 + 8) * /* original headers (16) + mc (8) + prev_mc (8) */
+           (16 + 8 + 8 + 20 + 4) * /* original headers (16) + mc (8) + prev_mc (8) + hmac(20) + hmac-pad(4)*/
            n /* One header per entry */;
 }
 
@@ -294,9 +295,11 @@ void uvEncodeBatchHeader(const struct raft_entry *entries,
 
         bytePut64(&cursor, entry->mc);
 
-        cursor = (uint8_t *)cursor + 3; /* Unused */
+        cursor = (uint8_t *)cursor + 7; /* Unused */  // change this to 7 (+4) (because of hmac) => total 56 byte header
 
         bytePut64(&cursor, entry->prev_mc);
+        
+        bytePutLen(&cursor, entry->hash, SHA1_DIGEST_SIZE); // 20 byte length
 
         /* Size of the log entry data, little endian. */
         bytePut32(&cursor, (uint32_t)entry->buf.len);
@@ -346,8 +349,6 @@ int uvDecodeBatchHeader(const void *batch,
 
     *n = (unsigned)byteGet64(&cursor);
 
-    tracef("from uvDecode: %u", *n);
-
     if (*n == 0) {
         *entries = NULL;
         return 0;
@@ -373,9 +374,18 @@ int uvDecodeBatchHeader(const void *batch,
         }
 
         entry->mc = byteGet64(&cursor);
-        cursor = (uint8_t *)cursor + 3; /* Unused */
+        cursor = (uint8_t *)cursor + 7; /* Unused */
 
         entry->prev_mc = byteGet64(&cursor);
+
+        entry->hash = byteGetLen(&cursor, SHA1_DIGEST_SIZE); // 20 byte length
+
+         //TODOHERE test
+        // uint8_t* tmp = byteGetLen(&cursor, (uint32_t) 5);
+        // for (int i = 0; i < 5; i++)
+        // {
+        //     printf("%c\t\t", tmp[i]);
+        // }
 
         /* Size of the log entry data, little endian. */
         entry->buf.len = byteGet32(&cursor);

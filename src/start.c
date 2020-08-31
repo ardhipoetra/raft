@@ -74,10 +74,42 @@ static int restoreEntries(struct raft *r,
     int rv;
     logStart(&r->log, snapshot_index, snapshot_term, start_index);
     r->last_stored = start_index - 1;
+    int j = 0;
     for (i = 0; i < n; i++) {
-        struct raft_entry *entry = &entries[i];
-        rv = logAppend(&r->log, entry->term, entry->type, &entry->buf,
-                       entry->batch, entry->mc, false);
+struct raft_entry *entry = &entries[i];
+
+char msg[100];
+sprintf(msg, "%llu-%d-%llu-%llu", entry->term, entry->type, entry->mc, entry->prev_mc);
+
+uint8_t* hmac = malloc(sizeof(uint8_t) * SHA1_DIGEST_SIZE);
+hmac_sha1(HMAC_KEY, strlen(HMAC_KEY), msg, strlen(msg), hmac, SHA1_DIGEST_SIZE);
+
+for (int xx = 0; xx < SHA1_DIGEST_SIZE; xx++) {
+    if (hmac[xx] != entry->hash[xx]) {
+        char hex[100], hex2[100];
+        tracef("ERROR: HMAC is not match at %d: %d vs %d", xx, hmac[xx], entry->hash[xx]);
+        for (xx = 0, j = 0; xx < SHA1_DIGEST_SIZE; ++xx, j += 2) {
+            sprintf(hex + j, "%02x", entry->hash[xx] & 0xff);
+            sprintf(hex2 + j, "%02x", hmac[xx] & 0xff);
+        }
+        tracef("ERROR: stored \t%s", hex);
+        tracef("ERROR: computed \t%s", hex2);
+        break;
+    }
+}
+// if j != 0, then it means we got error
+if (j != 0) {
+    goto abort;
+} else {
+    char hex[100];
+    for (int xx = 0, jj = 0; xx < SHA1_DIGEST_SIZE; ++xx, jj += 2) {
+        sprintf(hex + jj, "%02x", entry->hash[xx] & 0xff);
+    }
+    tracef("check HMAC %s done, no problem", hex);
+}
+
+rv = logAppend(&r->log, entry->term, entry->type, &entry->buf,
+                entry->batch, entry->mc, false);
         if (rv != 0) {
             goto err;
         }
@@ -96,6 +128,8 @@ static int restoreEntries(struct raft *r,
     raft_free(entries);
     return 0;
 
+abort:
+    return RAFT_SHUTDOWN;
 err:
     if (logNumEntries(&r->log) > 0) {
         logDiscard(&r->log, r->log.offset + 1);
@@ -143,7 +177,8 @@ int raft_start(struct raft *r)
     assert(logSnapshotIndex(&r->log) == 0);
     assert(r->last_stored == 0);
 
-    tracef("starting");
+    r->local_mc = readMC(r->id);
+    tracef("starting - refresh local mc %lu", r->local_mc);
     rv = r->io->load(r->io, &r->current_term, &r->voted_for, &snapshot,
                      &start_index, &entries, &n_entries);
     if (rv != 0) {
@@ -194,10 +229,33 @@ int raft_start(struct raft *r)
     struct raft_log* lg = &r->log;
     size_t lognum = logNumEntries(lg);
     if (lognum > 1) {
-        tracef("MC on latest entry is %lu - emmc MC is %lu", lg->entries[lg->back-1].mc, readMC(r->id));
-        if (lg->entries[lg->back-1].mc != readMC(r->id)) {
-            tracef("ERROR: MC is not equal. Rollback suspected!. Please start fresh");
-            return RAFT_SHUTDOWN;
+        raft_mc current_mc = readMC(r->id);
+        raft_mc last_mc = lg->entries[lg->back-1].mc;
+        tracef("MC on latest entry is %lu - emmc MC is %lu", last_mc, current_mc);
+        if (last_mc != current_mc) {
+            tracef("ERROR: MC is not equal. Rollback suspected!");
+            
+            raft_mc prev_mc = 0; raft_mc first_delmc = 0; 
+            raft_mc sto_mc = 0;  raft_mc end_delmc = 0;
+            readStopPoint(r->id, &prev_mc, &first_delmc, &end_delmc, &sto_mc);
+
+            if(current_mc != sto_mc) {
+                tracef("stored MC is not equal to current MC %lu vs %lu. SHUTDOWN", sto_mc, current_mc);
+                return RAFT_SHUTDOWN;
+            }
+
+            if (last_mc < prev_mc) {
+                tracef("last MC is falling behind of what we stored. Rollback detected? %lu vs %lu. SHUTDOWN", last_mc, prev_mc);
+                return RAFT_SHUTDOWN;
+            }
+
+            if (last_mc >= first_delmc && last_mc <= end_delmc) {
+                tracef("WARN: truncation on previous session was not finished yet");
+                //TODO: can join network but do not become a leader/candidate
+            }
+
+            tracef("False alarm, everything is okay! Possible cause was truncation. Setting last act to TRUNCATE");
+            lg->last_act = RAFT_LOG_TRUNCATE;
         }
     }
     

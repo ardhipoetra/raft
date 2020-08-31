@@ -39,6 +39,8 @@ int raft_init(struct raft *r,
     r->fsm = fsm;
     r->tracer = &NoopTracer;
     r->id = id;
+    r->local_mc = readMC(id);
+    printf("init: local mc is %lu", r->local_mc);
     /* Make a copy of the address */
     r->address = HeapMalloc(strlen(address) + 1);
     if (r->address == NULL) {
@@ -209,33 +211,92 @@ unsigned long long raft_digest(const char *text, unsigned long long n)
     return byteFlip64(digest);
 }
 
-unsigned long long writeMC(raft_id r_id) {
+raft_mc inc_local_MC(struct raft* r) {
+    r->local_mc = r->local_mc + 1;
+    return r->local_mc;
+}
+
+raft_mc writeMC(raft_id r_id) {
     FILE *fptr;
-    unsigned long long cur_mc = readMC(r_id);
+    raft_mc cur_mc = readMC(r_id);
 
     char buf[20];
     snprintf(buf, sizeof buf, "./mc-xs%d", (int) r_id);
-
-    // tracef("Write MC to (HARDCODED) %s: %d", buf, ilog_idx);
 
     fptr = fopen(buf,"w");
     fprintf(fptr,"%lu",cur_mc + 1);
     fclose(fptr);
 
+    tracef("Write MC to (HARDCODED) %s: %d", buf, cur_mc + 1);
+
     return cur_mc + 1;
 }
 
-unsigned long long readMC(raft_id r_id) {
+raft_mc readMC(raft_id r_id) {
     FILE *fptr;
-    unsigned long long num;
+    raft_mc num;
     char buf[20];
     snprintf(buf, sizeof buf, "./mc-xs%d", (int) r_id);
 
     fptr = fopen(buf,"r");
     fscanf(fptr,"%lu", &num);
 
-    // tracef("Read MC from (HARDCODED) %s: %ul", buf, num);
     fclose(fptr); 
 
     return num;
+}
+
+raft_mc writeContent(raft_id r_id, char *str) {
+    FILE *fptr;
+    
+    char buf[20];
+    snprintf(buf, sizeof buf, "./cc-xs%d", (int) r_id);
+
+    fptr = fopen(buf,"w");
+    fprintf(fptr,"%s", str);
+    fclose(fptr);
+
+    tracef("Entry %s written to %s", str, buf);
+
+    return writeMC(r_id);
+}
+
+void cleanStopPoint(raft_id r_id) {
+    return writeStopPoint(r_id, 0, 0, 0, 0);
+}
+
+char* readContent(raft_id r_id) {
+    FILE *fptr;
+    char str[32];
+    char buf[20];
+
+    snprintf(buf, sizeof buf, "./cc-xs%d", (int) r_id);
+
+    fptr = fopen(buf,"r");
+    fscanf(fptr,"%s", str);
+
+    tracef("Read content from (HARDCODED) %s: %s", buf, str);
+    fclose(fptr); 
+    return strdup(str);
+}
+
+raft_mc writeStopPoint(raft_id r_id, raft_mc prev_mc, 
+                    raft_mc st_del_mc, raft_mc ed_del_mc,
+                    raft_mc next_mc) {
+    
+    char buf[32];
+    snprintf(buf, sizeof buf, "%lu|%lu-%lu|%lu", prev_mc, st_del_mc, ed_del_mc, next_mc);
+    return writeContent(r_id, buf);
+}
+
+void readStopPoint(raft_id r_id, raft_mc prev_mc, 
+                    raft_mc st_del_mc, raft_mc ed_del_mc,
+                    raft_mc next_mc) {
+    FILE *fptr;
+    char buf[20];
+    snprintf(buf, sizeof buf, "./cc-xs%d", (int) r_id);
+
+    fptr = fopen(buf,"r");
+    fscanf(fptr,"%lu|%lu-%lu|%lu", prev_mc, st_del_mc, ed_del_mc, next_mc);
+    fclose(fptr); 
 }

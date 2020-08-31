@@ -44,6 +44,7 @@ void uvDecodeEntriesBatch(const struct raft_buffer *buf,
  * [1 byte ] Message type (Either RAFT_COMMAND or RAFT_CHANGE)
  * [8 bytes] monotonic counter (I assume it will be little endian)
  * [8 bytes] prev monotonic counter (I assume it will be little endian)
+ * [32 bytes] sha 256 hmac hash
  * [3 bytes] Currently unused.
  * [4 bytes] Size of the log entry data, little endian.
  *

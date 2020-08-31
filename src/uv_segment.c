@@ -912,6 +912,13 @@ static int uvWriteClosedSegment(struct uv *uv,
     entry.prev_mc = 0;
     entry.buf = *conf;
 
+    char msg[100];
+    sprintf(msg, "%llu-%d-%llu-%llu", entry.term, entry.type, entry.mc, entry.prev_mc);
+
+    uint8_t* hmac = malloc(sizeof(uint8_t) * SHA1_DIGEST_SIZE); //20 bytes
+    hmac_sha1(HMAC_KEY, strlen(HMAC_KEY), msg, strlen(msg), hmac, SHA1_DIGEST_SIZE);
+    entry.hash = hmac;
+
     tracef("writeclosedsegment");
 
     rv = uvSegmentBufferAppend(&buf, &entry, 1);
