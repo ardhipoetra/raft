@@ -76,40 +76,48 @@ static int restoreEntries(struct raft *r,
     r->last_stored = start_index - 1;
     int j = 0;
     for (i = 0; i < n; i++) {
-struct raft_entry *entry = &entries[i];
+        struct raft_entry *entry = &entries[i];
 
-char msg[100];
-sprintf(msg, "%llu-%d-%llu-%llu", entry->term, entry->type, entry->mc, entry->prev_mc);
+        char msg[100];
+        sprintf(msg, "%llu-%d-%llu-%llu", entry->term, entry->type, entry->mc, entry->prev_mc);
 
-uint8_t* hmac = malloc(sizeof(uint8_t) * SHA1_DIGEST_SIZE);
-hmac_sha1(HMAC_KEY, strlen(HMAC_KEY), msg, strlen(msg), hmac, SHA1_DIGEST_SIZE);
+        uint8_t* hmac = malloc(sizeof(uint8_t) * SHA1_DIGEST_SIZE);
+        hmac_sha1(HMAC_KEY, strlen(HMAC_KEY), msg, strlen(msg), hmac, SHA1_DIGEST_SIZE);
 
-for (int xx = 0; xx < SHA1_DIGEST_SIZE; xx++) {
-    if (hmac[xx] != entry->hash[xx]) {
-        char hex[100], hex2[100];
-        tracef("ERROR: HMAC is not match at %d: %d vs %d", xx, hmac[xx], entry->hash[xx]);
-        for (xx = 0, j = 0; xx < SHA1_DIGEST_SIZE; ++xx, j += 2) {
-            sprintf(hex + j, "%02x", entry->hash[xx] & 0xff);
-            sprintf(hex2 + j, "%02x", hmac[xx] & 0xff);
+        for (int xx = 0; xx < SHA1_DIGEST_SIZE; xx++) {
+            if (hmac[xx] != entry->hash[xx]) {
+                char hex[100], hex2[100];
+                tracef("ERROR: HMAC is not match at %d: %d vs %d", xx, hmac[xx], entry->hash[xx]);
+                for (xx = 0, j = 0; xx < SHA1_DIGEST_SIZE; ++xx, j += 2) {
+                    sprintf(hex + j, "%02x", entry->hash[xx] & 0xff);
+                    sprintf(hex2 + j, "%02x", hmac[xx] & 0xff);
+                }
+                tracef("ERROR: stored \t%s", hex);
+                tracef("ERROR: computed \t%s", hex2);
+                break;
+            }
         }
-        tracef("ERROR: stored \t%s", hex);
-        tracef("ERROR: computed \t%s", hex2);
-        break;
-    }
-}
-// if j != 0, then it means we got error
-if (j != 0) {
-    goto abort;
-} else {
-    char hex[100];
-    for (int xx = 0, jj = 0; xx < SHA1_DIGEST_SIZE; ++xx, jj += 2) {
-        sprintf(hex + jj, "%02x", entry->hash[xx] & 0xff);
-    }
-    tracef("check HMAC %s done, no problem", hex);
-}
+        // if j != 0, then it means we got error
+        if (j != 0) {
+            goto abort;
+        } else {
+            char hex[100];
+            for (int xx = 0, jj = 0; xx < SHA1_DIGEST_SIZE; ++xx, jj += 2) {
+                sprintf(hex + jj, "%02x", entry->hash[xx] & 0xff);
+            }
+            tracef("check HMAC %s done, no problem", hex);
+        }
 
-rv = logAppend(&r->log, entry->term, entry->type, &entry->buf,
-                entry->batch, entry->mc, false);
+        //also check backward if its compatible or not (chaining)
+        if (i > 0) {
+            struct raft_entry *prev_entry = &entries[i-1];
+            if (prev_entry->mc != entry->prev_mc) {
+                goto abort;
+            }
+        }
+
+        rv = logAppend(&r->log, entry->term, entry->type, &entry->buf,
+                        entry->batch, entry->mc, false);
         if (rv != 0) {
             goto err;
         }
@@ -129,6 +137,7 @@ rv = logAppend(&r->log, entry->term, entry->type, &entry->buf,
     return 0;
 
 abort:
+    tracef("Need to shutdown, shit happen when restoring");
     return RAFT_SHUTDOWN;
 err:
     if (logNumEntries(&r->log) > 0) {

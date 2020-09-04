@@ -527,24 +527,25 @@ int logAppend(struct raft_log *l,
     if (num_log > 0) {
         prev_mc = l->entries[prev_index].mc;
 
-        if (check) { // -> init state don't do checking
+        if (check) { // -> init state don't do MC checking here
             // if we're not deleting entries before, check MC;                                   //delete on head/front
             if (l->last_act != RAFT_LOG_TRUNCATE && l->last_act != RAFT_LOG_DISCARD && l->last_act != RAFT_LOG_NEWSNAP){
-                //compare last MC with current MC
+                //compare last MC with current MC: new entry should not be allowed, restore entry is okay
                 if (! (mc - 1 <= prev_mc)) { 
                     tracef("\t\t\tERROR: known last MC is falling behind current MC! %lu vs %lu", mc - 1 ,prev_mc);
                     return RAFT_SHUTDOWN;
                 }
             }
-
-            size_t prev_index2 = prev_index == 0 ? l->size-1 : prev_index-1;
-
-            if (num_log > 1 && l->entries[prev_index].prev_mc != l->entries[prev_index2].mc) { //beware:short-circuit
-                tracef("\t\t\tERROR: lost chain detected! %lu != %lu ", l->entries[prev_index].prev_mc,  l->entries[prev_index2].mc);
-                return RAFT_SHUTDOWN;
-            }
         }
+        size_t prev_index2 = prev_index == 0 ? l->size-1 : prev_index-1;
+
+        if (num_log > 1 && l->entries[prev_index].prev_mc != l->entries[prev_index2].mc) { //beware:short-circuit
+            tracef("\t\t\tERROR: lost chain detected! %lu != %lu ", l->entries[prev_index].prev_mc,  l->entries[prev_index2].mc);
+            return RAFT_SHUTDOWN;
+        }
+        
         if (prev_mc != mc - 1) {
+            // to note we have a gap
             tracef("\t\tWe have a jump!!");
         }
     } // else: it is our very first entry
@@ -576,7 +577,7 @@ int logAppend(struct raft_log *l,
     l->back = l->back % l->size;
 
     l->last_act = RAFT_LOG_APPEND;
-
+    
     return 0;
 }
 
