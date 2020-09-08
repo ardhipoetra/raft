@@ -640,85 +640,85 @@ static int probeDirectIO(int fd, size_t *size, char *errmsg)
 
 #if defined(RWF_NOWAIT)
 /* Check if fully non-blocking async I/O is possible on the given fd. */
-static int probeAsyncIO(int fd, size_t size, bool *ok, char *errmsg)
-{
-    void *buf;                  /* Buffer to use for the probe write */
-    aio_context_t ctx = 0;      /* KAIO context handle */
-    struct iocb iocb;           /* KAIO request object */
-    struct iocb *iocbs = &iocb; /* Because the io_submit() API sucks */
-    struct io_event event;      /* KAIO response object */
-    int n_events;
-    int rv;
+// static int probeAsyncIO(int fd, size_t size, bool *ok, char *errmsg)
+// {
+//     void *buf;                  /* Buffer to use for the probe write */
+//     aio_context_t ctx = 0;      /* KAIO context handle */
+//     struct iocb iocb;           /* KAIO request object */
+//     struct iocb *iocbs = &iocb; /* Because the io_submit() API sucks */
+//     struct io_event event;      /* KAIO response object */
+//     int n_events;
+//     int rv;
 
-    /* Setup the KAIO context handle */
-    rv = UvOsIoSetup(1, &ctx);
-    if (rv != 0) {
-        UvOsErrMsg(errmsg, "io_setup", rv);
-        /* UNTESTED: in practice this should fail only with ENOMEM */
-        return RAFT_IOERR;
-    }
+//     /* Setup the KAIO context handle */
+//     rv = UvOsIoSetup(1, &ctx);
+//     if (rv != 0) {
+//         UvOsErrMsg(errmsg, "io_setup", rv);
+//         /* UNTESTED: in practice this should fail only with ENOMEM */
+//         return RAFT_IOERR;
+//     }
 
-    /* Allocate the write buffer */
-    buf = raft_aligned_alloc(size, size);
-    if (buf == NULL) {
-        ErrMsgOom(errmsg);
-        return RAFT_NOMEM;
-    }
-    memset(buf, 0, size);
+//     /* Allocate the write buffer */
+//     buf = raft_aligned_alloc(size, size);
+//     if (buf == NULL) {
+//         ErrMsgOom(errmsg);
+//         return RAFT_NOMEM;
+//     }
+//     memset(buf, 0, size);
 
-    /* Prepare the KAIO request object */
-    memset(&iocb, 0, sizeof iocb);
-    iocb.aio_lio_opcode = IOCB_CMD_PWRITE;
-    *((void **)(&iocb.aio_buf)) = buf;
-    iocb.aio_nbytes = size;
-    iocb.aio_offset = 0;
-    iocb.aio_fildes = (uint32_t)fd;
-    iocb.aio_reqprio = 0;
-    iocb.aio_rw_flags |= RWF_NOWAIT | RWF_DSYNC;
+//     /* Prepare the KAIO request object */
+//     memset(&iocb, 0, sizeof iocb);
+//     iocb.aio_lio_opcode = IOCB_CMD_PWRITE;
+//     *((void **)(&iocb.aio_buf)) = buf;
+//     iocb.aio_nbytes = size;
+//     iocb.aio_offset = 0;
+//     iocb.aio_fildes = (uint32_t)fd;
+//     iocb.aio_reqprio = 0;
+//     iocb.aio_rw_flags |= RWF_NOWAIT | RWF_DSYNC;
 
-    /* Submit the KAIO request */
-    rv = UvOsIoSubmit(ctx, 1, &iocbs);
-    if (rv != 0) {
-        /* UNTESTED: in practice this should fail only with ENOMEM */
-        raft_aligned_free(size, buf);
-        UvOsIoDestroy(ctx);
-        /* On ZFS 0.8 this is not properly supported yet. Also, when running on
-         * older kernels a binary compiled on a kernel with RWF_NOWAIT support,
-         * we might get EINVAL. */
-        if (errno == EOPNOTSUPP || errno == EINVAL) {
-            *ok = false;
-            return 0;
-        }
-        UvOsErrMsg(errmsg, "io_submit", rv);
-        return RAFT_IOERR;
-    }
+//     /* Submit the KAIO request */
+//     rv = UvOsIoSubmit(ctx, 1, &iocbs);
+//     if (rv != 0) {
+//         /* UNTESTED: in practice this should fail only with ENOMEM */
+//         raft_aligned_free(size, buf);
+//         UvOsIoDestroy(ctx);
+//         /* On ZFS 0.8 this is not properly supported yet. Also, when running on
+//          * older kernels a binary compiled on a kernel with RWF_NOWAIT support,
+//          * we might get EINVAL. */
+//         if (errno == EOPNOTSUPP || errno == EINVAL) {
+//             *ok = false;
+//             return 0;
+//         }
+//         UvOsErrMsg(errmsg, "io_submit", rv);
+//         return RAFT_IOERR;
+//     }
 
-    /* Fetch the response: will block until done. */
-    n_events = UvOsIoGetevents(ctx, 1, 1, &event, NULL);
-    assert(n_events == 1);
+//     /* Fetch the response: will block until done. */
+//     n_events = UvOsIoGetevents(ctx, 1, 1, &event, NULL);
+//     assert(n_events == 1);
 
-    /* Release the write buffer. */
-    raft_aligned_free(size, buf);
+//     /* Release the write buffer. */
+//     raft_aligned_free(size, buf);
 
-    /* Release the KAIO context handle. */
-    rv = UvOsIoDestroy(ctx);
-    if (rv != 0) {
-        UvOsErrMsg(errmsg, "io_destroy", rv);
-        return RAFT_IOERR;
-    }
+//     /* Release the KAIO context handle. */
+//     rv = UvOsIoDestroy(ctx);
+//     if (rv != 0) {
+//         UvOsErrMsg(errmsg, "io_destroy", rv);
+//         return RAFT_IOERR;
+//     }
 
-    if (event.res > 0) {
-        assert(event.res == (int)size);
-        *ok = true;
-    } else {
-        /* UNTESTED: this should basically fail only because of disk errors,
-         * since we allocated the file with posix_fallocate and the block size
-         * is supposed to be correct. */
-        *ok = false;
-    }
+//     if (event.res > 0) {
+//         assert(event.res == (int)size);
+//         *ok = true;
+//     } else {
+//         /* UNTESTED: this should basically fail only because of disk errors,
+//          * since we allocated the file with posix_fallocate and the block size
+//          * is supposed to be correct. */
+//         *ok = false;
+//     }
 
-    return 0;
-}
+//     return 0;
+// }
 #endif /* RWF_NOWAIT */
 
 #define UV__FS_PROBE_FILE ".probe"
@@ -760,10 +760,10 @@ int UvFsProbeCapabilities(const char *dir,
         *async = false;
         goto out;
     }
-    rv = probeAsyncIO(fd, *direct, async, errmsg);
-    if (rv != 0) {
-        goto err_after_file_open;
-    }
+    // rv = probeAsyncIO(fd, *direct, async, errmsg);
+    // if (rv != 0) {
+    //     goto err_after_file_open;
+    // }
 #endif /* RWF_NOWAIT */
 
 #if defined(RWF_NOWAIT)
