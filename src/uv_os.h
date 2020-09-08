@@ -105,14 +105,14 @@ int UvOsRename(const char *path1, const char *path2);
 void UvOsJoin(const char *dir, const char *filename, char *path);
 
 /* TODO: figure a portable abstraction. */
-int UvOsIoSetup(unsigned nr, aio_context_t *ctxp);
-int UvOsIoDestroy(aio_context_t ctx);
-int UvOsIoSubmit(aio_context_t ctx, long nr, struct iocb **iocbpp);
-int UvOsIoGetevents(aio_context_t ctx,
-                    long min_nr,
-                    long max_nr,
-                    struct io_event *events,
-                    struct timespec *timeout);
+// int UvOsIoSetup(unsigned nr, aio_context_t *ctxp);
+// int UvOsIoDestroy(aio_context_t ctx);
+// int UvOsIoSubmit(aio_context_t ctx, long nr, struct iocb **iocbpp);
+// int UvOsIoGetevents(aio_context_t ctx,
+//                     long min_nr,
+//                     long max_nr,
+//                     struct io_event *events,
+//                     struct timespec *timeout);
 int UvOsEventfd(unsigned int initval, int flags);
 int UvOsSetDirectIo(uv_file fd);
 

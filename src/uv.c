@@ -53,6 +53,8 @@ static int uvInit(struct raft_io *io, raft_id id, const char *address)
     }
     uv->direct_io = direct_io != 0;
     uv->block_size = direct_io != 0 ? direct_io : 4096;
+    uv->direct_io = false;
+    uv->async_io = false;
 
     rv = uvMetadataLoad(uv->dir, &metadata, io->errmsg);
     if (rv != 0) {
