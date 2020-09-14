@@ -13,6 +13,8 @@
 #include "membership.h"
 #include "tracing.h"
 
+#include <node.h>
+
 /* 1000 = 1 sec */
 #define DEFAULT_ELECTION_TIMEOUT 20000 
 #define DEFAULT_HEARTBEAT_TIMEOUT 5000
@@ -41,6 +43,13 @@ int raft_init(struct raft *r,
     r->id = id;
     r->local_mc = readMC(id);
     printf("init: local mc is %lu", r->local_mc);
+
+    //RDTODO: do local election (blocking)
+    // return nonzero if not a leader
+
+    // rv = run_local_election(id, atoi(port), 10000000000, "127.0.0.1", 8889);
+    if (rv != 0) {goto err;}
+
     /* Make a copy of the address */
     r->address = HeapMalloc(strlen(address) + 1);
     if (r->address == NULL) {
@@ -217,6 +226,62 @@ raft_mc inc_local_MC(struct raft* r) {
 }
 
 raft_mc writeMC(raft_id r_id) {
+    //r_id is not used, now inc_mc directly talked with node.c
+    inc_mc();
+    return readMC(r_id);
+}
+
+raft_mc readMC(raft_id r_id) {
+    //r_id is not used, now inc_mc directly talked with node.c
+    return (raft_mc) tmp_raft_read_mc();
+}
+
+raft_mc writeContent(raft_id r_id, char *str) {
+    write_msg(str);
+    return readMC(r_id);
+}
+
+void cleanStopPoint(raft_id r_id) {
+    return writeStopPoint(r_id, 0, 0, 0, 0);
+}
+
+char* readContent(raft_id r_id) {
+    return read_last_msg();
+}
+
+raft_mc writeStopPoint(raft_id r_id, raft_mc prev_mc, 
+                    raft_mc st_del_mc, raft_mc ed_del_mc,
+                    raft_mc next_mc) {
+    
+    char buf[32];
+    snprintf(buf, sizeof buf, "%lu|%lu-%lu|%lu", prev_mc, st_del_mc, ed_del_mc, next_mc);
+    return writeContent(r_id, buf);
+}
+
+void readStopPoint(raft_id r_id, raft_mc* prev_mc, 
+                    raft_mc* st_del_mc, raft_mc* ed_del_mc,
+                    raft_mc* next_mc) {
+
+    char *content = readContent(r_id);
+    sscanf(content, "%lu|%lu-%lu|%lu", prev_mc, st_del_mc, ed_del_mc, next_mc);
+}
+
+/* unused, but might be useful, code */
+raft_mc _unused_local_readMC(raft_id r_id) {
+    FILE *fptr;
+    raft_mc num;
+    char buf[20];
+    snprintf(buf, sizeof buf, "./mc-xs%d", (int) r_id);
+
+    fptr = fopen(buf,"r");
+    fscanf(fptr,"%lu", &num);
+
+    fclose(fptr); 
+
+    return num;
+}
+
+raft_mc _unused_local_writeMC(raft_id r_id) {
     FILE *fptr;
     raft_mc cur_mc = readMC(r_id);
 
@@ -232,21 +297,7 @@ raft_mc writeMC(raft_id r_id) {
     return cur_mc + 1;
 }
 
-raft_mc readMC(raft_id r_id) {
-    FILE *fptr;
-    raft_mc num;
-    char buf[20];
-    snprintf(buf, sizeof buf, "./mc-xs%d", (int) r_id);
-
-    fptr = fopen(buf,"r");
-    fscanf(fptr,"%lu", &num);
-
-    fclose(fptr); 
-
-    return num;
-}
-
-raft_mc writeContent(raft_id r_id, char *str) {
+raft_mc _unused_local_writeContent(raft_id r_id, char *str) {
     FILE *fptr;
     
     char buf[20];
@@ -261,11 +312,7 @@ raft_mc writeContent(raft_id r_id, char *str) {
     return writeMC(r_id);
 }
 
-void cleanStopPoint(raft_id r_id) {
-    return writeStopPoint(r_id, 0, 0, 0, 0);
-}
-
-char* readContent(raft_id r_id) {
+char* _unused_local_readContent(raft_id r_id) {
     FILE *fptr;
     char str[32];
     char buf[20];
@@ -280,16 +327,7 @@ char* readContent(raft_id r_id) {
     return strdup(str);
 }
 
-raft_mc writeStopPoint(raft_id r_id, raft_mc prev_mc, 
-                    raft_mc st_del_mc, raft_mc ed_del_mc,
-                    raft_mc next_mc) {
-    
-    char buf[32];
-    snprintf(buf, sizeof buf, "%lu|%lu-%lu|%lu", prev_mc, st_del_mc, ed_del_mc, next_mc);
-    return writeContent(r_id, buf);
-}
-
-void readStopPoint(raft_id r_id, raft_mc prev_mc, 
+void _unused_local_readStopPoint(raft_id r_id, raft_mc prev_mc, 
                     raft_mc st_del_mc, raft_mc ed_del_mc,
                     raft_mc next_mc) {
     FILE *fptr;

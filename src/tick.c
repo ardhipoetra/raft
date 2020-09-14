@@ -8,6 +8,8 @@
 #include "replication.h"
 #include "tracing.h"
 
+#include <node.h>
+
 /* Set to 1 to enable tracing. */
 #if 1
 #define tracef(...) Tracef(r->tracer, __VA_ARGS__)
@@ -224,6 +226,10 @@ static int tick(struct raft *r)
         tracef("I'm not available..... :(");
         return 0;
     }
+
+    //RDTODO: local_update_state (from lease) should be here
+    local_update_state();   // here, will be exit(1) if not leader somehow
+                            // should we return instead of exiting? is there any needs to exit gracefully?
 
     switch (r->state) {
         case RAFT_FOLLOWER:

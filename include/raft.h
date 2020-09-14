@@ -1020,8 +1020,12 @@ raft_mc writeStopPoint(raft_id r_id, raft_mc prev_mc,
                     raft_mc st_del_mc, raft_mc ed_del_mc,
                     raft_mc next_mc);
 
-void readStopPoint(raft_id r_id, raft_mc prev_mc, 
-                    raft_mc st_del_mc, raft_mc ed_del_mc,
-                    raft_mc next_mc);
+// void readStopPoint(raft_id r_id, raft_mc prev_mc, 
+//                     raft_mc st_del_mc, raft_mc ed_del_mc,
+//                     raft_mc next_mc);
+
+void readStopPoint(raft_id r_id, raft_mc* prev_mc, 
+                    raft_mc* st_del_mc, raft_mc* ed_del_mc,
+                    raft_mc* next_mc);
 #endif /* RAFT_H */
 
