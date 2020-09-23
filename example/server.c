@@ -5,9 +5,12 @@
 
 #include "../include/raft.h"
 #include "../include/raft/uv.h"
+#include "../../leases/safeleader/node.h"
 
-#define N_SERVERS 4    /* Number of servers in the example cluster */
-#define APPLY_RATE 2000 /* Apply a new entry every 125 milliseconds */
+// #include "node.h"
+
+#define N_SERVERS 1    /* Number of servers in the example cluster */
+#define APPLY_RATE 1000 /* Apply a new entry every 125 milliseconds */
 
 #define Log(SERVER_ID, FORMAT) printf("\t\t[SERVER]%d: " FORMAT "\n", SERVER_ID)
 #define Logf(SERVER_ID, FORMAT, ...) \
@@ -388,6 +391,20 @@ int main(int argc, char *argv[])
     id = (unsigned)atoi(argv[2]);
 
     Logf(id, "hereyougo %d %s", id, dir);
+
+    char *port = malloc(sizeof(char) * 8);
+    sprintf(port, "900%d", id);
+
+    // char *addr = malloc(sizeof(char) * 20);
+    // sprintf(addr, "127.0.0.1:%s", port);
+
+    // // 1000000000 ns = 1sec <<<<< dur_nsec
+    // // RDTODO: here should be run_local_election() -> node.c
+    run_local_election(id, 18181, 5000000000, "141.76.44.96", 9999);
+
+
+// return 0;
+    // below this unchanged
 
     /* Ignore SIGPIPE, see https://github.com/joyent/libuv/issues/1254 */
     signal(SIGPIPE, SIG_IGN);
