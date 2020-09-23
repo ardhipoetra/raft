@@ -265,7 +265,16 @@ void readStopPoint(raft_id r_id, raft_mc* prev_mc,
     sscanf(content, "%lu[%lu-%lu]%lu", prev_mc, st_del_mc, ed_del_mc, next_mc);
 }
 
-/* unused, but might be useful, code */
+raft_mc reset_crash_num(raft_id r_id) {
+    reset_crashnum();
+    return readMC(r_id);
+}
+
+int read_crashnum() {
+    return read_crash_num();
+}
+
+/* unused, but might be useful, code 
 raft_mc _unused_local_readMC(raft_id r_id) {
     FILE *fptr;
     raft_mc num;
@@ -336,4 +345,4 @@ void _unused_local_readStopPoint(raft_id r_id, raft_mc prev_mc,
     fptr = fopen(buf,"r");
     fscanf(fptr,"%lu|%lu-%lu|%lu", prev_mc, st_del_mc, ed_del_mc, next_mc);
     fclose(fptr); 
-}
+} */

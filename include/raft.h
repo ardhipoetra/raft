@@ -1015,6 +1015,8 @@ raft_mc writeMC(raft_id r_id);
 raft_mc writeContent(raft_id r_id, char *str);
 raft_mc readMC(raft_id r_id);
 char* readContent(raft_id r_id);
+raft_mc reset_crash_num(raft_id r_id);
+int read_crashnum();
 
 raft_mc writeStopPoint(raft_id r_id, raft_mc prev_mc, 
                     raft_mc st_del_mc, raft_mc ed_del_mc,

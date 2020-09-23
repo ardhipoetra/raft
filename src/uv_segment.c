@@ -908,7 +908,7 @@ static int uvWriteClosedSegment(struct uv *uv,
 
     entry.term = 1;
     entry.type = RAFT_CHANGE;
-    entry.mc = writeMC(uv->id); //bootstrap configuration
+    entry.mc = readMC(uv->id) + 1; // writeMC(uv->id) + 1; //bootstrap configuration
     entry.prev_mc = 0;
     entry.buf = *conf;
 

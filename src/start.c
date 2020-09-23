@@ -241,12 +241,31 @@ int raft_start(struct raft *r)
         raft_mc current_mc = readMC(r->id);
         raft_mc last_mc = lg->entries[lg->back-1].mc;
         tracef("MC on latest entry is %lu - emmc MC is %lu", last_mc, current_mc);
+
+        int crashnum = read_crashnum();
+
+        //RDTODO: dev-only
+        if (crashnum > 0) {
+            current_mc = current_mc - crashnum;
+            r->local_mc = reset_crash_num(r->id);
+            lg->entries[lg->back-1].mc = r->local_mc;
+            //TODO: modify last entry's MC
+        }
+        //end of dev-only
+
         if (last_mc != current_mc) {
             tracef("ERROR: MC is not equal. Rollback suspected!");
             
             raft_mc prev_mc = 0; raft_mc first_delmc = 0; 
             raft_mc sto_mc = 0;  raft_mc end_delmc = 0;
             readStopPoint(r->id, &prev_mc, &first_delmc, &end_delmc, &sto_mc);
+
+            // now k is != to c(k)
+            /**
+             * if k > t + c(k) = too far
+             * else : c(k) <- k+1 ; reset t;
+             */ 
+            
 
             if(current_mc != sto_mc) {
                 tracef("stored MC is not equal to current MC %lu vs %lu. SHUTDOWN", sto_mc, current_mc);
@@ -266,6 +285,11 @@ int raft_start(struct raft *r)
             tracef("False alarm, everything is okay! Possible cause was truncation. Setting last act to TRUNCATE");
             lg->last_act = RAFT_LOG_TRUNCATE;
         }
+    } else {
+        // it means we only have 1 entry (typically configuration)
+        // TODO: make it more strict?
+        r->local_mc = reset_crash_num(r->id);
+        // lg->entries[lg->back-1].mc = r->local_mc-1;
     }
     
     
