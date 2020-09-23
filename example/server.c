@@ -400,7 +400,8 @@ int main(int argc, char *argv[])
 
     // // 1000000000 ns = 1sec <<<<< dur_nsec
     // // RDTODO: here should be run_local_election() -> node.c
-    run_local_election(id, 18181, 5000000000, "141.76.44.96", 9999);
+    // run_local_election(id, 18181, 5000000000, "141.76.44.96", 9999);
+    run_local_election(id, 18181, 5000000000, "127.0.0.1", 8889);
 
 
 // return 0;
