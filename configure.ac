@@ -1,5 +1,5 @@
 AC_PREREQ(2.60)
-AC_INIT([raft], [0.9.23])
+AC_INIT([raft], [0.9.24])
 AC_LANG([C])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR([ac])
@@ -50,7 +50,7 @@ AC_CHECK_HEADERS([stdlib.h string.h stdio.h assert.h unistd.h linux/io_uring.h l
 # Check if zfs >= 0.8.0 is available (for direct I/O support).
 AC_CHECK_PROG(have_zfs, zfs, yes)
 AS_IF([test x"$have_zfs" = x"yes"],
-   [AX_COMPARE_VERSION($(zfs version 2>/dev/null | cut -f 2 -d - | head -1), [ge], [0.8.0],
+   [AX_COMPARE_VERSION($(cat /sys/module/zfs/version | cut -f 1 -d -), [ge], [0.8.0],
        [AC_DEFINE(RAFT_HAVE_ZFS_WITH_DIRECT_IO)], [])
    ],
    [])
