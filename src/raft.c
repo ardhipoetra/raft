@@ -42,7 +42,6 @@ int raft_init(struct raft *r,
     r->tracer = &NoopTracer;
     r->id = id;
     r->local_mc = readMC(id);
-    printf("init: local mc is %lu", r->local_mc);
 
     //RDTODO: do local election (blocking)
     // return nonzero if not a leader
@@ -233,7 +232,7 @@ raft_mc writeMC(raft_id r_id) {
 
 raft_mc readMC(raft_id r_id) {
     //r_id is not used, now inc_mc directly talked with node.c
-    return (raft_mc) tmp_raft_read_mc();
+    return (raft_mc) read_mc();
 }
 
 raft_mc writeContent(raft_id r_id, char *str) {
@@ -254,7 +253,7 @@ raft_mc writeStopPoint(raft_id r_id, raft_mc prev_mc,
                     raft_mc next_mc) {
     
     char buf[32];
-    snprintf(buf, sizeof buf, "%lu|%lu-%lu|%lu", prev_mc, st_del_mc, ed_del_mc, next_mc);
+    snprintf(buf, sizeof buf, "%lu[%lu-%lu]%lu", prev_mc, st_del_mc, ed_del_mc, next_mc);
     return writeContent(r_id, buf);
 }
 
@@ -263,7 +262,7 @@ void readStopPoint(raft_id r_id, raft_mc* prev_mc,
                     raft_mc* next_mc) {
 
     char *content = readContent(r_id);
-    sscanf(content, "%lu|%lu-%lu|%lu", prev_mc, st_del_mc, ed_del_mc, next_mc);
+    sscanf(content, "%lu[%lu-%lu]%lu", prev_mc, st_del_mc, ed_del_mc, next_mc);
 }
 
 /* unused, but might be useful, code */
