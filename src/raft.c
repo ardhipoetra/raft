@@ -47,13 +47,12 @@ int raft_init(struct raft *r,
     r->fsm = fsm;
     r->tracer = &NoopTracer;
     r->id = id;
-    r->local_mc = readMC(id);
 
-    //RDTODO: do local election (blocking)
-    // return nonzero if not a leader
-
-    // rv = run_local_election(id, atoi(port), 10000000000, "127.0.0.1", 8889);
-    if (rv != 0) {goto err;}
+    // return < 0 if not a leader
+    rv = run_local_election(id, 43168, EMMC_TERM_NS, EMMC_IP, EMMC_PORT);
+    if (rv != 1) {goto err;}
+    
+    r->local_mc = readMC(id); // in real emmc, for some reason we need to read the mc before doing anything
 
     /* Make a copy of the address */
     r->address = HeapMalloc(strlen(address) + 1);

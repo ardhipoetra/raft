@@ -14,6 +14,10 @@
 #define MC_TIMEOUT 2 * 1000 * (3 - 1)
 
 #define HMAC_KEY "asdqwe123"
+#define EMMC_IP "127.0.0.1"
+#define EMMC_PORT 8889
+// 1000000000 ns = 1sec <<<<< dur_nsec
+#define EMMC_TERM_NS 3000000000
 /**
  * Error codes.
  */
