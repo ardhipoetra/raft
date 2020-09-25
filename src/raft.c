@@ -49,7 +49,11 @@ int raft_init(struct raft *r,
     r->id = id;
 
     // return < 0 if not a leader
-    rv = run_local_election(id, 43168, EMMC_TERM_NS, EMMC_IP, EMMC_PORT);
+    if (r->emmc_port == 0) { // use default address
+        rv = run_local_election(id, 43168, EMMC_TERM_NS, EMMC_IP, EMMC_PORT);
+    } else {
+        rv = run_local_election(id, 43168, r->emmc_ndur, r->emmc_ip, r->emmc_port);
+    }
     if (rv != 1) {goto err;}
     
     r->local_mc = readMC(id); // in real emmc, for some reason we need to read the mc before doing anything
@@ -287,8 +291,14 @@ raft_mc reset_crash_num(raft_id r_id) {
     return readMC(r_id);
 }
 
-int read_crashnum() {
+int read_crashnum(void) {
     return read_crash_num();
+}
+
+void set_emmc_server(struct raft *r, char *emmc_ip, int emmc_port, unsigned long emmc_ndur) {
+    r->emmc_ip = emmc_ip;
+    r->emmc_port = emmc_port;
+    r->emmc_ndur = emmc_ndur;
 }
 
 /* unused, but might be useful, code 

@@ -573,6 +573,10 @@ struct raft
     char *address;              /* Server address of this raft instance. */
     raft_mc local_mc;
 
+    char *emmc_ip;          
+    int emmc_port;
+    unsigned long emmc_ndur;
+
     /*
      * Cache of the server's persistent state, updated on stable storage before
      * responding to RPCs (Figure 3.1).
@@ -1039,7 +1043,7 @@ raft_mc writeContent(raft_id r_id, char *str);
 raft_mc readMC(raft_id r_id);
 char* readContent(raft_id r_id);
 raft_mc reset_crash_num(raft_id r_id);
-int read_crashnum();
+int read_crashnum(void);
 
 raft_mc writeStopPoint(raft_id r_id, raft_mc prev_mc, 
                     raft_mc st_del_mc, raft_mc ed_del_mc,
@@ -1052,5 +1056,7 @@ raft_mc writeStopPoint(raft_id r_id, raft_mc prev_mc,
 void readStopPoint(raft_id r_id, raft_mc* prev_mc, 
                     raft_mc* st_del_mc, raft_mc* ed_del_mc,
                     raft_mc* next_mc);
+
+void set_emmc_server(struct raft *r, char *emmc_ip, int emmc_port, unsigned long emmc_ndur);
 #endif /* RAFT_H */
 
